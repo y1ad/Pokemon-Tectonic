@@ -107,7 +107,11 @@ jobs:
         with:
           ruby-version: "3.1"
 
+      # El default de la action es "tools platform-tools", pero el paquete
+      # legacy "tools" ya no existe en el repo del SDK y rompe sdkmanager.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
 
       - name: Install NDK + build-tools
         run: |
@@ -294,16 +298,3 @@ jobs:
             3. Controles táctiles en pantalla; también funciona con mando Bluetooth/USB.
 
             Si no hay secrets de firma configurados, la clave es desechable: desinstala antes de actualizar.
-PP_VERSION_NAME) }}
-          name: Pokémon Tectonic Android ${{ env.APP_VERSION_NAME }}
-          files: out/*.apk
-          body: |
-            Pokémon Tectonic — Android APK (arm64-v8a), build from `${{ github.sha }}`.
-
-            **Instalación**
-            1. Descarga el APK e instálalo (activa *instalar apps desconocidas*).
-            2. El primer arranque extrae el juego (~1.3 GB). Necesitas ~4 GB libres.
-            3. Controles táctiles en pantalla; también funciona con mando Bluetooth/USB.
-
-            Si no hay secrets de firma configurados, la clave es desechable: desinstala antes de actualizar.
-            
