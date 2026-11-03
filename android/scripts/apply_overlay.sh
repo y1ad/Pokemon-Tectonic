@@ -30,6 +30,14 @@ MAIN="$ENGINE/app/jni/mkxp-z/src/main.cpp"
 need 'if (sdkVersion < 30) {' "$MAIN"
 sed -i 's/if (sdkVersion < 30) {/if (false) {/' "$MAIN"
 
+# --- Pantalla: forzar fullscreen en Android ---
+# Sin SDL_WINDOW_FULLSCREEN_DESKTOP el motor toma defScreenW/H (512x384) como tamano
+# de ventana y el juego se dibuja a tamano nativo en la esquina inferior izquierda.
+# En fullscreen SDL usa el tamano real de la pantalla; mkxp-z escala y centra (4:3).
+need 'if (conf.fullscreen)' "$MAIN"
+sed -i 's/if (conf.fullscreen)/if (true)/' "$MAIN"
+grep -q 'if (true)' "$MAIN" || { echo "::error::fullscreen patch failed"; exit 1; }
+
 # --- Ruby: cargar la extension estatica 'zlib' al arrancar ---
 # mkxp-z compila zlib dentro de libruby pero no hace require; Essentials/Tectonic
 # usan Zlib::Inflate/Deflate (PluginManager) sin requerirlo.
