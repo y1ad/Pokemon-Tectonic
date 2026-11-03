@@ -53,7 +53,6 @@ jobs:
 
       - name: Compile PBS + plugins (headless, Linux build from the repo)
         id: compile
-        continue-on-error: true
         run: bash android/scripts/compile_game_data.sh "$PWD"
 
       - name: Pack game.zip
@@ -107,7 +106,11 @@ jobs:
         with:
           ruby-version: "3.1"
 
-      - uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          packages: platform-tools
 
       - name: Install NDK + build-tools
         run: |
@@ -294,3 +297,4 @@ jobs:
             3. Controles táctiles en pantalla; también funciona con mando Bluetooth/USB.
 
             Si no hay secrets de firma configurados, la clave es desechable: desinstala antes de actualizar.
+            
