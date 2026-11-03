@@ -30,4 +30,12 @@ MAIN="$ENGINE/app/jni/mkxp-z/src/main.cpp"
 need 'if (sdkVersion < 30) {' "$MAIN"
 sed -i 's/if (sdkVersion < 30) {/if (false) {/' "$MAIN"
 
+# --- Ruby: cargar la extension estatica 'zlib' al arrancar ---
+# mkxp-z compila zlib dentro de libruby pero no hace require; Essentials/Tectonic
+# usan Zlib::Inflate/Deflate (PluginManager) sin requerirlo.
+BIND="$ENGINE/app/jni/mkxp-z/binding/binding-mri.cpp"
+need '^    mriBindingInit();$' "$BIND"
+sed -i 's/^    mriBindingInit();$/    mriBindingInit();\n    rb_eval_string("begin; require %q(zlib); rescue LoadError; end");/' "$BIND"
+grep -q 'require %q(zlib)' "$BIND" || { echo "::error::zlib patch failed"; exit 1; }
+
 echo "Overlay applied to $ENGINE"
