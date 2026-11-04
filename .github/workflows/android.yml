@@ -51,41 +51,16 @@ jobs:
             sudo apt-get install -y --no-install-recommends "$p" || echo "::warning::could not install $p"
           done
 
-      # TEMPORAL: plugin de parche/diagnostico para el problema del idioma en Android.
-      # Se copia solo en CI para que el compilador lo incluya en PluginScripts.rxdata.
-      - name: Add Android language plugin (temporary)
-        run: cp -r "android/overlay/plugins/ZZ Android Diagnostics" "Plugins/ZZ Android Diagnostics"
-
-      # TEMPORAL: comprobar que spanish.dat es un Marshal valido en un Ruby normal.
-      - name: Verify spanish.dat (temporary)
-        continue-on-error: true
-        run: |
-          OUT=$(ruby -rzlib -e '
-            class OrderedHash < Hash
-              def self._load(s)
-                kv = Marshal.load(s)
-                h = new
-                kv[0].each_with_index { |k, i| h[k] = kv[1][i] }
-                h
-              end
-              def _dump(d = 100); Marshal.dump([keys, values]); end
-            end
-            d = File.binread("Data/spanish.dat")
-            puts "spanish.dat size=#{d.bytesize} crc=#{Zlib.crc32(d).to_s(16)}"
-            begin
-              m = Marshal.load(d)
-              puts "host Marshal.load OK class=#{m.class} len=#{m.length}"
-            rescue Exception => e
-              puts "host Marshal.load FAILED #{e.class}: #{e.message}"
-            end
-          ' 2>&1 | tr '\n' '|')
-          echo "$OUT"
-          echo "::notice title=spanish.dat check::$OUT"
-
       - name: Compile PBS + plugins (headless, Linux build from the repo)
         id: compile
         continue-on-error: true
         run: bash android/scripts/compile_game_data.sh "$PWD"
+
+      - name: Report compile outcome
+        run: |
+          echo "headless compile outcome: ${{ steps.compile.outcome }}"
+          echo "### Headless compile: ${{ steps.compile.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          ls -la Data/*.dat Data/PluginScripts.rxdata 2>/dev/null | head -20 >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Pack game.zip
         env:
@@ -138,16 +113,27 @@ jobs:
         with:
           ruby-version: "3.1"
 
-      # El default de la action es "tools platform-tools", pero el paquete
-      # legacy "tools" ya no existe en el repo del SDK y rompe sdkmanager.
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: "platform-tools"
-
+      # El runner ya trae el Android SDK; se usa sdkmanager directamente
+      # (android-actions/setup-android fallaba en este paso).
       - name: Install NDK + build-tools
         run: |
-          sdkmanager --install "ndk;${NDK_VERSION}" "platforms;android-33" "build-tools;33.0.2"
-          NDK="$ANDROID_HOME/ndk/${NDK_VERSION}"
+          set -eo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "Android SDK: $SDK"
+          ls "$SDK" || true
+          ls "$SDK/cmdline-tools" || true
+          SDKM="$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$SDKM" ]; then
+            echo "::error::sdkmanager not found under $SDK/cmdline-tools"
+            exit 1
+          fi
+          echo "sdkmanager: $SDKM"
+          yes | "$SDKM" --sdk_root="$SDK" --licenses > /dev/null || true
+          "$SDKM" --sdk_root="$SDK" --install "ndk;${NDK_VERSION}" "platforms;android-33" "build-tools;33.0.2"
+          NDK="$SDK/ndk/${NDK_VERSION}"
+          test -d "$NDK"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
           echo "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
 
@@ -276,7 +262,8 @@ jobs:
       - name: Inject game, zipalign and sign
         run: |
           set -euo pipefail
-          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          BT="$SDK/build-tools/$(ls "$SDK/build-tools" | sort -V | tail -1)"
           echo "build-tools: $BT"
           mkdir -p stage/assets out
           cp dl/game.zip stage/assets/game.zip
