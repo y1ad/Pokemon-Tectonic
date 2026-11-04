@@ -1,4 +1,4 @@
 Name         = ZZ Android Diagnostics
 Credits      = Android port (temporary)
-Requires     = Tectonic Graphics and UI
+Requires     = Tectonic Graphics
 Requires     = Tectonic Other
