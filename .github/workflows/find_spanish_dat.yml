@@ -1,0 +1,97 @@
+name: Find valid spanish.dat
+
+# Prueba cada version de Data/spanish.dat del historial con un Ruby normal y dice
+# cual es la mas reciente que se puede leer con Marshal.load. Con apply=true la
+# restaura (usando el mismo blob, sin conversiones de saltos de linea).
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Commit the newest valid version into Data/spanish.dat"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  find:
+    name: Scan spanish.dat history
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test every version of Data/spanish.dat
+        id: scan
+        run: |
+          cat > /tmp/check.rb <<'EOF'
+          class OrderedHash < Hash
+            def self._load(s)
+              kv = Marshal.load(s)
+              h = new
+              kv[0].each_with_index { |k, i| h[k] = kv[1][i] }
+              h
+            end
+            def _dump(d = 100); Marshal.dump([keys, values]); end
+          end
+          d = File.binread(ARGV[0])
+          result = nil
+          code = 1
+          begin
+            m = Marshal.load(d)
+            if m.is_a?(Array)
+              result = "OK sections=#{m.length}"
+              code = 0
+            else
+              result = "BADROOT #{m.class}"
+            end
+          rescue Exception => e
+            result = "FAIL #{e.class}: #{e.message.to_s[0, 60]}"
+          end
+          puts result
+          exit code
+          EOF
+
+          git config --global --add safe.directory "$PWD"
+          : > /tmp/report.txt
+          FIRST_OK=""
+          for sha in $(git log --format=%H -- Data/spanish.dat | head -30); do
+            git show "$sha:Data/spanish.dat" > /tmp/sp.dat 2>/dev/null || true
+            size=$(wc -c < /tmp/sp.dat)
+            out=$(ruby /tmp/check.rb /tmp/sp.dat 2>&1 | tail -n 1)
+            case "$out" in
+              OK*) if [ -z "$FIRST_OK" ]; then FIRST_OK=$sha; fi ;;
+            esac
+            echo "$(git log -1 --format='%h %ad' --date=short "$sha") size=$size $out" >> /tmp/report.txt
+          done
+
+          cat /tmp/report.txt
+          {
+            echo "## Versions of Data/spanish.dat (newest first)"
+            echo '```'
+            cat /tmp/report.txt
+            echo '```'
+            echo "First valid: ${FIRST_OK:-NONE}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::notice title=spanish.dat versions (1)::$(head -n 8 /tmp/report.txt | tr '\n' '|')"
+          echo "::notice title=spanish.dat versions (2)::$(tail -n +9 /tmp/report.txt | head -n 8 | tr '\n' '|')"
+          echo "::notice title=First valid spanish.dat::${FIRST_OK:-NONE}"
+          echo "first_ok=$FIRST_OK" >> "$GITHUB_OUTPUT"
+
+      - name: Restore newest valid version
+        if: ${{ inputs.apply && steps.scan.outputs.first_ok != '' }}
+        run: |
+          set -e
+          BLOB=$(git rev-parse "${{ steps.scan.outputs.first_ok }}:Data/spanish.dat")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git update-index --add --cacheinfo 100644,"$BLOB",Data/spanish.dat
+          if ! grep -q '^\*\.dat binary' .gitattributes; then
+            echo '*.dat binary' >> .gitattributes
+            git add .gitattributes
+          fi
+          git commit -m "fix: restore last valid Data/spanish.dat (${{ steps.scan.outputs.first_ok }}); mark *.dat as binary"
+          git push
