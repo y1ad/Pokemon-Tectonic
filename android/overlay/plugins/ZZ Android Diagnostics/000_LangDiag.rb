@@ -1,26 +1,59 @@
-# Diagnostico TEMPORAL (Android): muestra por que falla la carga de idioma.
-# Messages#loadMessageFile traga cualquier error con un rescue silencioso. Aqui
-# interceptamos pbLoadMessages (la usan tanto el arranque como Opciones > Language),
-# repetimos la carga del .dat y mostramos el resultado en el siguiente pbMessage.
+# Parche + diagnostico (Android) para la carga de idioma.
+#
+# Sintoma: Marshal.load(File) falla con "marshal data too short" en Android aunque el
+# archivo existe con su tamano completo, y Messages#loadMessageFile se traga el error.
+# Intento de arreglo: si la carga normal falla, leer el .dat ENTERO a memoria
+# (File.binread, o lectura por trozos) y hacer Marshal.load sobre el String.
+# Ademas deja un mensaje de diagnostico que se muestra una vez en el siguiente pbMessage.
 begin
   alias __android_diag_pbLoadMessages pbLoadMessages
   def pbLoadMessages(file)
     ret = __android_diag_pbLoadMessages(file)
     begin
-      unless file.to_s[/english/i]
-        ex = File.file?(file)
-        line1 = "#{file} ex=#{ex} size=#{ex ? File.size(file) : 0} ret=#{ret.class}"
-        line2 = ""
+      if ret.nil? && !file.to_s[/english/i]
+        size = (File.size(file) rescue -1)
+        info = ["#{file} size=#{size}"]
+        attempts = []
+        data = nil
         begin
-          data = nil
-          File.open(file, "rb") { |f| data = Marshal.load(f) }
-          line2 = "marshal=#{data.class}"
-          line2 += " len=#{data.length}" if data.respond_to?(:length)
-          line2 += " s24=#{data[24].class}" if data.is_a?(Array)
+          d = File.binread(file)
+          attempts << "binread=#{d.bytesize}"
+          data = d if d.bytesize == size
         rescue Exception => e
-          line2 = "ERR #{e.class}: #{e.message.to_s[0, 90]}"
+          attempts << "binread ERR #{e.class}"
         end
-        $ANDROID_LANG_DIAG = line1 + "\n" + line2
+        if data.nil?
+          begin
+            buf = "".b
+            File.open(file, "rb") do |f|
+              while (c = f.read(65536))
+                buf << c
+              end
+            end
+            attempts << "chunk=#{buf.bytesize}"
+            data = buf if buf.bytesize == size
+          rescue Exception => e
+            attempts << "chunk ERR #{e.class}"
+          end
+        end
+        info << attempts.join(" ")
+        if data
+          crc = (Zlib.crc32(data).to_s(16) rescue "?")
+          info << "crc=#{crc}"
+          begin
+            msgs = Marshal.load(data)
+            if msgs.is_a?(Array)
+              MessageTypes.class_variable_get(:@@messages).instance_variable_set(:@messages, msgs)
+              ret = msgs
+              info << "FIX OK"
+            else
+              info << "root=#{msgs.class}"
+            end
+          rescue Exception => e
+            info << "load ERR #{e.class}: #{e.message.to_s[0, 80]}"
+          end
+        end
+        $ANDROID_LANG_DIAG = info.join("\n")
       end
     rescue Exception
     end
