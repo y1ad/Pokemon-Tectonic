@@ -51,10 +51,36 @@ jobs:
             sudo apt-get install -y --no-install-recommends "$p" || echo "::warning::could not install $p"
           done
 
-      # TEMPORAL: plugin de diagnostico para el problema del idioma en Android.
+      # TEMPORAL: plugin de parche/diagnostico para el problema del idioma en Android.
       # Se copia solo en CI para que el compilador lo incluya en PluginScripts.rxdata.
-      - name: Add Android diagnostics plugin (temporary)
+      - name: Add Android language plugin (temporary)
         run: cp -r "android/overlay/plugins/ZZ Android Diagnostics" "Plugins/ZZ Android Diagnostics"
+
+      # TEMPORAL: comprobar que spanish.dat es un Marshal valido en un Ruby normal.
+      - name: Verify spanish.dat (temporary)
+        continue-on-error: true
+        run: |
+          OUT=$(ruby -rzlib -e '
+            class OrderedHash < Hash
+              def self._load(s)
+                kv = Marshal.load(s)
+                h = new
+                kv[0].each_with_index { |k, i| h[k] = kv[1][i] }
+                h
+              end
+              def _dump(d = 100); Marshal.dump([keys, values]); end
+            end
+            d = File.binread("Data/spanish.dat")
+            puts "spanish.dat size=#{d.bytesize} crc=#{Zlib.crc32(d).to_s(16)}"
+            begin
+              m = Marshal.load(d)
+              puts "host Marshal.load OK class=#{m.class} len=#{m.length}"
+            rescue Exception => e
+              puts "host Marshal.load FAILED #{e.class}: #{e.message}"
+            end
+          ' 2>&1 | tr '\n' '|')
+          echo "$OUT"
+          echo "::notice title=spanish.dat check::$OUT"
 
       - name: Compile PBS + plugins (headless, Linux build from the repo)
         id: compile
