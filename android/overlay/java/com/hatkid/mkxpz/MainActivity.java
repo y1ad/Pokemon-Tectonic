@@ -36,6 +36,9 @@ public class MainActivity extends SDLActivity
     private final Gamepad mGamepad = new Gamepad();
     private boolean mGamepadInvisible = false;
 
+    // Boton de ajustes + editor de controles tactiles
+    private ControlsManager mControls = null;
+
     private void runSDLThread()
     {
         if (!mStarted) {
@@ -77,6 +80,15 @@ public class MainActivity extends SDLActivity
 
         if (mLayout != null) {
             mGamepad.attachTo(this, mLayout);
+
+            // Boton de ajustes (engranaje) y editor de controles
+            try {
+                mControls = new ControlsManager(this, mLayout);
+                mControls.init();
+            } catch (Exception e) {
+                Log.e(TAG, "Controls manager failed: " + e);
+                mControls = null;
+            }
         }
     }
 
@@ -101,6 +113,13 @@ public class MainActivity extends SDLActivity
     @Override
     public boolean dispatchKeyEvent(KeyEvent evt)
     {
+        // Atras sale del modo de edicion de controles
+        if (mControls != null && mControls.isEditing() && evt.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if (evt.getAction() == KeyEvent.ACTION_UP)
+                mControls.exitEdit();
+            return true;
+        }
+
         if (
             evt.getKeyCode() != KeyEvent.KEYCODE_BACK &&
             evt.getKeyCode() != KeyEvent.KEYCODE_VOLUME_UP &&
