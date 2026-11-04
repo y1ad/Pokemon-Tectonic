@@ -51,6 +51,11 @@ jobs:
             sudo apt-get install -y --no-install-recommends "$p" || echo "::warning::could not install $p"
           done
 
+      # TEMPORAL: plugin de diagnostico para el problema del idioma en Android.
+      # Se copia solo en CI para que el compilador lo incluya en PluginScripts.rxdata.
+      - name: Add Android diagnostics plugin (temporary)
+        run: cp -r "android/overlay/plugins/ZZ Android Diagnostics" "Plugins/ZZ Android Diagnostics"
+
       - name: Compile PBS + plugins (headless, Linux build from the repo)
         id: compile
         continue-on-error: true
